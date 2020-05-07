@@ -1,14 +1,14 @@
 from discord.ext import commands
-from discord import Embed, Game, Streaming, Activity, ActivityType, Status
+from discord import Embed, Activity, ActivityType, Status, Streaming, Game
 from cmds import serverfiles
 
 #
 
 extensionfolder = "cmds"
-extensions = ['basic','support','moderation','games','help','channels','music']
+extensions = ['basic','support','moderation','games','help','channels','music','owneronly']
 sudo_ids = [285832847409807360]
 sudo_seperator = "--sudo"
-all_prefixes = ["/","!","$",".","-",">"]
+all_prefixes = ["/","!","$",".","-",">","?"]
 
 # Own functions
 
@@ -25,24 +25,33 @@ class MyContext(commands.Context):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        ## manupulate ctx for --sudo command
+        self.data = serverfiles.Server.getServer(self.guild.id)
+
+        ## manupulate ctx for --sudo arg
         if int(self.author.id) in sudo_ids:
             if sudo_seperator in self.message.content:
-                msg = self.message.content
-                newmsg = msg.split(sudo_seperator)[0]
-                newmember = msg.split(sudo_seperator)[1]
-                self.message.content = newmsg
-                userid = int(newmember.lstrip(" ").lstrip("<@").lstrip("!").lstrip("&").rstrip(">") if "<@" in newmember and ">" in newmember else newmember)
-                self.author = self.guild.get_member(userid)
+                try:
+                    msg = self.message.content
+                    newmsg = msg.split(sudo_seperator)[0]
+                    newmember = msg.split(sudo_seperator)[1]
+                    self.message.content = newmsg
+                    userid = int(newmember.lstrip(" ").lstrip("<@").lstrip("!").lstrip("&").rstrip(">") if "<@" in newmember and ">" in newmember else newmember)
+                    member = self.guild.get_member(userid)
+                    self.author = member
+                    self.message.author = member
+                except (ValueError, ) as e:
+                    print("[SUDO] - Kein gültiges Mitglied: "+newmember+" - Fehler: "+e)
+
 
     def getargs(self):
         msg = self.message.content.split(" ")
-        calledbymention = msg[0][0] in all_prefixes
-        txt = (" ".join(msg[len(self.args)+len(self.kwargs)-int(calledbymention)::])) if len(msg) > (len(self.args)-int(calledbymention)) else ""
+        calledbymention = bool(self.prefix in all_prefixes)
+        length = len(self.args)+len(self.kwargs)-int(calledbymention)
+        txt = (" ".join(msg[length::])) if len(msg) > length else ""
         return txt.split(sudo_seperator)[0]
 
-    async def sendEmbed(self, *args, **kwargs):
-        return await self.send(embed=self.getEmbed(*args, **kwargs))
+    async def sendEmbed(self, *args, message:str="", **kwargs):
+        return await self.send(message, embed=self.getEmbed(*args, **kwargs))
 
     def getEmbed(self, title:str, description:str="", color:int=0x000000, fields:list=[], inline:bool=True, thumbnailurl:str=None, authorurl:str="", authorname:str=None):
         EMBED = Embed(title=title, description=description, color=color)
@@ -74,7 +83,7 @@ bot = MyBot(
     command_prefix=get_prefix,
     description='Das ist eine Beschreibung!',
     case_insensitive=True,
-    activity=Game(name="/help"),
+    activity=Activity(type=ActivityType.listening, name="/help"),
     status=Status.idle
 )
 
@@ -137,7 +146,8 @@ async def on_command_error(ctx,error):
         EMBED.add_field(name="Beschreibung",value="Es ist ein unbekannter Fehler aufgetreten! Vermutlich liegt er nicht bei dir, also melde ihn am besten einen Admin.")
         print("Bei '"+ctx.message.content+"' von '"+ctx.message.author.name+"' ist ein Fehler aufgetreten: "+str(error))
     if not error == "":
-        EMBED.add_field(name="Text",value=error)
+        EMBED.add_field(name="Text",value=str(error) if len(str(error)) < 1024 else str(error)[-1024:-1])
+    EMBED.add_field(name="Nachricht",value=ctx.message.content, inline=False)
     await ctx.send(embed=EMBED)
     return
 
@@ -148,95 +158,6 @@ async def on_command_error(ctx,error):
 async def destroy(ctx):
     pass
 
-# Owner-only Commands
-
-@bot.command()
-@commands.is_owner()
-async def reload(ctx, extension:str=None):
-    EMBED = Embed(title="Reload", color=0x00ff00)
-    EMBED.set_footer(text=f'Angefordert von {ctx.message.author.name}',icon_url=ctx.author.avatar_url)
-    EMBED.add_field(name="Status",value="Reloading...")
-    msg = await ctx.send(embed=EMBED)
-    EMBED2 = Embed(title="Reload", color=0x00ff00)
-    EMBED2.set_footer(text=f'Angefordert von {ctx.message.author.name}',icon_url=ctx.author.avatar_url)
-    if extension in extensions:
-        try:
-            bot.unload_extension(extensionfolder+"."+extension)
-        except:
-            pass
-        try:
-            bot.load_extension(extensionfolder+"."+extension)
-        except commands.errors.ExtensionAlreadyLoaded:
-            pass
-        EMBED2.add_field(name="Status",value="Reloaded category "+extension.upper()+"!")
-    else:
-        for extension in extensions:
-            try:
-                bot.unload_extension(extensionfolder+"."+extension)
-            except:
-                pass
-            try:
-                bot.load_extension(extensionfolder+"."+extension)
-            except commands.errors.ExtensionAlreadyLoaded:
-                pass
-        EMBED2.add_field(name="Status",value="Reloaded all categories!")
-    await msg.edit(embed=EMBED2)
-
-
-@bot.command()
-@commands.is_owner()
-async def stopbot(ctx):
-    EMBED = Embed(title="Stop", color=0xff0000)
-    EMBED.set_footer(text=f'Angefordert von {ctx.message.author.name}',icon_url=ctx.author.avatar_url)
-    EMBED.add_field(name="Status",value="Gestoppt!")
-    msg = await ctx.send(embed=EMBED)
-    await bot.logout()
-
-
-@bot.command()
-@commands.is_owner()
-async def activity(ctx, was:str="", arg1:str=""):
-    arg2 = ctx.getargs()
-    if was.lower() in ["playing","spielt","game","play"]:
-        await bot.change_presence(activity=Game(name=arg1+" "+arg2))
-    elif was.lower() in ["streaming","streamt","stream","live","twitch"]:
-        await bot.change_presence(activity=Streaming(url=arg1, name=arg2))
-    elif was.lower() in ["listening","listen","hört","hören","song"]:
-        await bot.change_presence(activity=Activity(type=ActivityType.listening, name=arg1+" "+arg2))
-    elif was.lower() in ["watching","watch","schaut","video"]:
-        await bot.change_presence(activity=Activity(type=ActivityType.watching, name=arg1+" "+arg2))
-    else:
-        await ctx.sendEmbed(title="Mögliche Aktivitäten", color=0xff0000, inline=False,
-            fields=[
-                ("Game",    "spielt <EIN SPIEL>"),
-                ("Stream",  "streamt <TWITCH-URL> <AUF TWITCH>"),
-                ("Song",    "hört <SONG>"),
-                ("Video",   "schaut <VIDEO>")
-            ]
-        )
-
-@bot.command()
-@commands.is_owner()
-async def status(ctx, was:str=""):
-    if was.lower() in ["on","online","green"]:
-        await bot.change_presence(status=Status.online)
-    elif was.lower() in ["off","offline","invisible","grey"]:
-        await bot.change_presence(status=Status.invisible)
-    elif was.lower() in ["dnd","donotdisturb","do_not_disturb","bittenichtstören","red"]:
-        await bot.change_presence(status=Status.dnd)
-    elif was.lower() in ["idle","abwesend","orange","yellow"]:
-        await bot.change_presence(status=Status.idle)
-    else:
-        await ctx.sendEmbed(title="Mögliche Status", color=0xff0000, inline=False,
-            fields=[
-                ("Online (on/online)",          "-> Weisser Punkt"),
-                ("Abwesend (idle)",             "-> Gelber Halbmond"),
-                ("Bitte nicht stören (dnd)",    "-> Rotes Verbotsschild"),
-                ("Unsichtbar (off/offline)",    "-> Grauer Ring")
-            ]
-        )
-
-
 
 # Start
 
@@ -246,10 +167,12 @@ def run(TOKEN):
 
 import sys, os
 
-if 'DISCORD_RAFAELSBOT' in os.environ:
-    run(os.environ.get('DISCORD_RAFAELSBOT'))
-elif len(sys.argv) > 1:
-    run(sys.argv[1])
-else:
-    print("No TOKEN found! Enter it manually...")
-    run(input("TOKEN: "))
+if __name__ == "__main__":
+    if 'DISCORD_RAFAELSBOT' in os.environ:
+        run(os.environ.get('DISCORD_RAFAELSBOT'))
+
+    elif len(sys.argv) > 1:
+        run(sys.argv[1])
+    else:
+        print("No TOKEN found! Enter it manually...")
+        run(input("TOKEN: "))
