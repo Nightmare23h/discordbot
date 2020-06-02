@@ -87,7 +87,7 @@ class YouTubePlayer(PCMVolumeTransformer):
         fields.append(("Status", status, False))
         await ctx.sendEmbed(
             title=self.title,
-            description=self.description if len(self.description) < 100 else self.description[0:100]+"...",
+            description=((self.description if len(self.description) < 100 else self.description[0:100]+"...") if isinstance(self.description, str) else "Keine Beschreibung gefunden"),
             color=ctx.cog.color,
             fields=fields,
             thumbnailurl=self.thumbnail if self.thumbnail else None,
@@ -127,7 +127,7 @@ class MusicQueue():
         return bool(self._players)
 
     def playNext(self, ctx):
-        if self.hasPlayer() and ctx.voice_client:
+        if self.hasPlayer() and ctx.voice_client and ctx.voice_client.is_connected():
             player = self._players.pop(0)
             player.play(ctx)
             return player
